@@ -33,7 +33,7 @@ ALTER TABLE users
 -- is_admin(auth.uid()) resolved. CREATE OR REPLACE strips the default,
 -- which would break migration 008's no-arg `is_admin()` policy calls on a
 -- fresh deploy (policies validate functions at creation).
-CREATE OR REPLACE FUNCTION public.is_admin(uid uuid DEFAULT auth.uid())
+CREATE OR REPLACE FUNCTION public.is_admin(user_id_param uuid DEFAULT auth.uid())
 RETURNS boolean
 LANGUAGE sql
 SECURITY DEFINER
@@ -42,7 +42,7 @@ SET search_path = public
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM users
-    WHERE id = uid
+    WHERE id = user_id_param
       AND (is_admin = true OR is_super_admin = true)
   );
 $$;
@@ -73,6 +73,25 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 -- SECURITY DEFINER function.
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
+-- 001 created the legacy audit_logs shape (table_name/operation/user_id), so
+-- CREATE TABLE IF NOT EXISTS above is a no-op on an existing database. Add the
+-- actor columns used by log_audit() and relax the legacy NOT NULL columns.
+ALTER TABLE public.audit_logs
+  ADD COLUMN IF NOT EXISTS actor_id UUID,
+  ADD COLUMN IF NOT EXISTS actor_name TEXT,
+  ADD COLUMN IF NOT EXISTS actor_role TEXT,
+  ADD COLUMN IF NOT EXISTS action TEXT,
+  ADD COLUMN IF NOT EXISTS resource TEXT,
+  ADD COLUMN IF NOT EXISTS success BOOLEAN,
+  ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS ip_address INET,
+  ADD COLUMN IF NOT EXISTS user_agent TEXT;
+
+ALTER TABLE public.audit_logs
+  ALTER COLUMN table_name DROP NOT NULL,
+  ALTER COLUMN operation DROP NOT NULL;
+
+DROP POLICY IF EXISTS "Super admins can read audit logs" ON audit_logs;
 CREATE POLICY "Super admins can read audit logs"
   ON audit_logs FOR SELECT
   TO authenticated

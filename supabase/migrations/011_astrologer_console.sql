@@ -12,6 +12,14 @@
 --
 -- SAFE TO RE-RUN: uses CREATE OR REPLACE / IF NOT EXISTS.
 
+-- Supabase installs uuid-ossp in the extensions schema, which is not always on
+-- the migration search_path. Provide a public compatibility shim so the many
+-- `uuid_generate_v4()` defaults in this chain resolve consistently.
+CREATE OR REPLACE FUNCTION public.uuid_generate_v4()
+RETURNS UUID
+LANGUAGE SQL
+AS $$ SELECT gen_random_uuid() $$;
+
 -- ============================================================
 -- 0. Ensure 'active' exists in consultation_status enum
 --    (Migration 010 already casts 'active'::consultation_status)
