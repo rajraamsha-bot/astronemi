@@ -23,7 +23,7 @@ BEGIN
     ALTER TABLE public.subscriptions RENAME TO subscriptions_legacy;
 
     CREATE TABLE public.subscriptions (
-      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
       plan_id VARCHAR(50),
       plan_name VARCHAR(100),
@@ -424,6 +424,8 @@ END $$;
 -- ============================================================
 -- 3. FIX get_astrologer_earnings AUTH CHECK
 -- ============================================================
+
+DROP FUNCTION IF EXISTS public.get_astrologer_earnings(UUID);
 
 CREATE OR REPLACE FUNCTION public.get_astrologer_earnings(p_astrologer_id UUID)
 RETURNS NUMERIC
