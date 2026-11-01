@@ -8,7 +8,7 @@
 -- SAFE TO RE-RUN: CREATE OR REPLACE / idempotent policy DDL.
 
 -- =====================================================================
--- 1. astrologer_earnings_summary — enforce caller auth (owner, admin, service_role)
+-- 1. astrologer_earnings_summary ï¿½ enforce caller auth (owner, admin, service_role)
 -- =====================================================================
 CREATE OR REPLACE FUNCTION public.astrologer_earnings_summary(p_astrologer_id UUID)
 RETURNS TABLE(lifetime_net NUMERIC, pending_net NUMERIC)
@@ -66,7 +66,7 @@ BEGIN
       WHERE routine_schema = 'public' AND routine_name = 'activate_due_consultations'
     ) THEN
       PERFORM cron.schedule('activate-due-consultations', '* * * * *',
-        $$SELECT public.activate_due_consultations()$$);
+        'SELECT public.activate_due_consultations()');
     END IF;
   ELSE
     RAISE NOTICE 'pg_cron unavailable; call activate_due_consultations() from an external scheduler.';

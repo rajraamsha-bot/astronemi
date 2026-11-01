@@ -126,6 +126,9 @@ GRANT EXECUTE ON FUNCTION public.end_consultation(UUID) TO authenticated;
 --    (services/chat.ts closeConsultation) passes no duration. Result: every
 --    astrologer-side completion recorded 0 minutes and ₹0 earnings even
 --    though the user was charged. Fall back to the trusted start_time.
+--    019 defines this RPC with RETURNS TABLE; 024 returns JSONB, so drop the
+--    old signature first.
+DROP FUNCTION IF EXISTS public.complete_consultation(UUID, INTEGER);
 CREATE OR REPLACE FUNCTION public.complete_consultation(
   p_consultation_id UUID,
   p_duration_minutes INTEGER DEFAULT NULL

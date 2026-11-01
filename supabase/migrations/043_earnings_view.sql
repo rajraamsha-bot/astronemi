@@ -3,14 +3,14 @@
 -- with a dynamically computed view that correctly computes today's earnings at IST timezone.
 
 -- 1. Drop the hacky cron job
-DO $$$
+DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     PERFORM cron.unschedule('reset-today-earnings');
   END IF;
 EXCEPTION WHEN OTHERS THEN
   -- pg_cron might not be installed, ignore
-END $$$;
+END $$;
 
 -- 2. Create the dynamically computed view
 CREATE OR REPLACE VIEW public.astrologer_dashboard_stats WITH (security_invoker = true) AS

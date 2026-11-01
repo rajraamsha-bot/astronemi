@@ -437,12 +437,12 @@ GRANT EXECUTE ON FUNCTION public.apply_signup_bonus(UUID) TO authenticated, serv
 -- =====================================================================
 REVOKE UPDATE (
     is_admin, is_super_admin, subscription_tier, subscription_ends_at,
-    subscription_plan, role, wallet_balance
+    role, wallet_balance
   ) ON public.users FROM authenticated;
 
 REVOKE UPDATE (
     is_admin, is_super_admin, subscription_tier, subscription_ends_at,
-    subscription_plan, role, wallet_balance
+    role, wallet_balance
   ) ON public.users FROM anon;
 
 -- =====================================================================

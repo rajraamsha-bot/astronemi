@@ -11,7 +11,7 @@
 -- 3. Grants only the secure wrapper to authenticated users
 
 -- Revoke direct access to the original subscribe_astrologer function
-REVOKE EXECUTE ON FUNCTION subscribe_astrologer(UUID, UUID, TEXT, TEXT, UUID) FROM authenticated;
+REVOKE EXECUTE ON FUNCTION subscribe_astrologer(UUID, TEXT, TEXT, TEXT) FROM authenticated;
 
 -- Create payment-verified secure subscription function
 CREATE OR REPLACE FUNCTION subscribe_astrologer_secure(
@@ -24,6 +24,7 @@ CREATE OR REPLACE FUNCTION subscribe_astrologer_secure(
 RETURNS JSONB AS $$
 DECLARE
   v_payment_record RECORD;
+  v_sub RECORD;
   v_expected_type TEXT;
   v_expected_amount NUMERIC;
   v_tier_prices JSONB;
@@ -97,7 +98,7 @@ BEGIN
   -- SECURITY: Check if payment has already been used for a subscription
   IF EXISTS (
     SELECT 1 FROM astrologer_subscriptions
-    WHERE payment_id = p_payment_id
+    WHERE razorpay_payment_id = p_payment_id::TEXT
   ) THEN
     RETURN jsonb_build_object(
       'success', false,
@@ -106,14 +107,20 @@ BEGIN
   END IF;
 
   -- All security checks passed - delegate to the original function
-  -- The original function is still SECURITY DEFINER and handles the actual
-  -- subscription creation logic (ownership checks, duration calculation, etc.)
-  RETURN subscribe_astrologer(
-    p_subscriber_id,
+  -- (which is still SECURITY DEFINER and handles ownership/duration).
+  SELECT * INTO v_sub
+  FROM public.subscribe_astrologer(
     p_astrologer_id,
     p_tier,
     p_cycle,
-    p_payment_id
+    p_payment_id::TEXT
+  );
+
+  RETURN jsonb_build_object(
+    'success', COALESCE(v_sub.success, false),
+    'message', COALESCE(v_sub.message, 'Subscription processed'),
+    'subscription_id', v_sub.subscription_id,
+    'ends_at', v_sub.ends_at
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

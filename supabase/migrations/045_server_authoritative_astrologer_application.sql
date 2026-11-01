@@ -99,10 +99,10 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.submit_astrologer_application(
-  UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC
+  UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC
 ) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.submit_astrologer_application(
-  UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC
+  UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC, NUMERIC
 ) TO authenticated;
 
 -- Lock the table down so only the RPC writes privileged columns.
