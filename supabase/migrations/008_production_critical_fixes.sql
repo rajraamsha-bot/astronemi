@@ -2,6 +2,98 @@
 -- Missing RPC functions, RLS policies, and security hardening
 
 -- ============================================================
+-- 0. RECONCILIATION MERGED FROM 001b / 001c
+--
+-- The Supabase GitHub integration only tracks numeric migration versions, so
+-- the letter-suffixed 001b/001c files were skipped on a fresh project. Their
+-- effects are required by 008 and later migrations, so they are applied here
+-- before the rest of 008. Both blocks are idempotent.
+-- ============================================================
+
+DO $$
+DECLARE
+  v_has_legacy BOOLEAN;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'subscriptions' AND column_name = 'plan'
+  ) INTO v_has_legacy;
+
+  IF v_has_legacy THEN
+    ALTER TABLE public.subscriptions RENAME TO subscriptions_legacy;
+
+    CREATE TABLE public.subscriptions (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+      plan_id VARCHAR(50),
+      plan_name VARCHAR(100),
+      amount DECIMAL(10, 2),
+      currency VARCHAR(3) DEFAULT 'INR',
+      payment_id UUID REFERENCES public.payments(id),
+      payment_status TEXT DEFAULT 'pending'
+        CHECK (payment_status IN ('pending', 'completed', 'failed', 'refunded')),
+      start_date TIMESTAMP WITH TIME ZONE,
+      end_date TIMESTAMP WITH TIME ZONE,
+      is_active BOOLEAN DEFAULT true,
+      razorpay_subscription_id TEXT,
+      cancelled_at TIMESTAMP WITH TIME ZONE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    INSERT INTO public.subscriptions (
+      id, user_id, plan_id, plan_name, amount, currency,
+      payment_id, payment_status, start_date, end_date, is_active, created_at
+    )
+    SELECT
+      id, user_id, plan, plan, price, 'INR',
+      payment_id,
+      CASE WHEN status = 'active' THEN 'completed' ELSE 'pending' END,
+      started_at, ends_at, COALESCE(auto_renew, false), created_at
+    FROM public.subscriptions_legacy;
+
+    DROP TABLE public.subscriptions_legacy;
+
+    ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS "Users view own subscriptions" ON public.subscriptions;
+    CREATE POLICY "Users view own subscriptions" ON public.subscriptions
+      FOR SELECT USING (auth.uid() = user_id);
+
+    DROP POLICY IF EXISTS "Users insert own subscriptions" ON public.subscriptions;
+    CREATE POLICY "Users insert own subscriptions" ON public.subscriptions
+      FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+    CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id
+      ON public.subscriptions (user_id);
+
+    GRANT SELECT, INSERT ON public.subscriptions TO authenticated;
+  END IF;
+END $$;
+
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS subscription_tier VARCHAR(20) NOT NULL DEFAULT 'free'
+    CONSTRAINT users_subscription_tier_check
+    CHECK (subscription_tier IN ('free', 'basic', 'premium', 'gold'));
+
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS subscription_ends_at TIMESTAMP WITH TIME ZONE;
+
+DROP VIEW IF EXISTS public.users_compatible;
+
+CREATE VIEW public.users_compatible
+WITH (security_invoker = true) AS
+SELECT
+    u.id, u.phone, u.email, u.name, u.avatar_url,
+    u.birth_date, u.birth_time, u.birth_place,
+    u.birth_lat, u.birth_lng, u.zodiac_sign, u.nakshatra,
+    u.referral_code, u.referred_by, u.wallet_balance,
+    u.subscription_tier, u.subscription_ends_at, u.language,
+    u.notifications_enabled, u.referral_earnings, u.updated_at, u.created_at
+FROM public.users u;
+
+GRANT SELECT ON public.users_compatible TO authenticated;
+
+-- ============================================================
 -- 1. MISSING RPC FUNCTIONS
 -- ============================================================
 
@@ -319,9 +411,13 @@ ALTER TABLE payment_idempotency_keys ENABLE ROW LEVEL SECURITY;
 -- subscription_plans: Anyone can read
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'subscription_plans') THEN
-    EXECUTE 'ALTER TABLE subscription_plans ENABLE ROW LEVEL SECURITY';
-    EXECUTE 'CREATE POLICY IF NOT EXISTS "Plans are publicly readable" ON subscription_plans FOR SELECT USING (true)';
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'subscription_plans'
+  ) THEN
+    EXECUTE 'ALTER TABLE public.subscription_plans ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "Plans are publicly readable" ON public.subscription_plans';
+    EXECUTE 'CREATE POLICY "Plans are publicly readable" ON public.subscription_plans FOR SELECT USING (true)';
   END IF;
 END $$;
 
