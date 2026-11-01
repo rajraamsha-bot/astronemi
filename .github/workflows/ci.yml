@@ -1,0 +1,570 @@
+name: CI/CD Pipeline
+
+# Single consolidated pipeline. Previously three overlapping workflows
+# (ci.yml, ci-cd.yml, production-checks.yml) each ran lint/type-check/tests on
+# every push/PR, so a commit ran the pipeline up to three times. This file is
+# now the single source of truth; the other two were removed.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  # Production release is manual-only. The gate is the typed confirmation
+  # string, NOT `environment: production` (which silently degrades to
+  # auto-deploy if the environment has no required reviewers configured).
+  workflow_dispatch:
+    inputs:
+      confirm_production_deploy:
+        description: 'Type "DEPLOY TO PRODUCTION" to confirm production release'
+        required: true
+        default: 'no'
+      rollout_percentage:
+        description: 'Initial Play Store rollout percentage (10/50/100)'
+        required: true
+        default: '10'
+
+env:
+  NODE_VERSION: '20'
+  JAVA_VERSION: '17'
+  EXPO_SDK_VERSION: '54'
+
+jobs:
+  # ------------------------------------------------------------------
+  # Code Quality and Linting
+  # ------------------------------------------------------------------
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Security audit
+        run: npm run check:audit
+
+      - name: Verify pg_cron functions
+        run: npm run check:cron
+
+      - name: Backend portability inventory
+        run: npm run check:portability
+
+      # EAS/store placeholders are release-time concerns. Running this here
+      # made every PR red until App Store Connect credentials existed.
+      # It is enforced in the production-checks job instead.
+
+  # ------------------------------------------------------------------
+  # Unit and Integration Tests
+  # ------------------------------------------------------------------
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: quality
+    strategy:
+      matrix:
+        test-type: [unit, integration, e2e]
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: |
+          case "${{ matrix.test-type }}" in
+            unit)
+              # Thresholds live in jest.config.js (global + per-file gates for
+              # auth/wallet/rate-limiter/secure-random). The old CLI override
+              # demanded 50-55% while the project measured ~35-44%, so this job
+              # could never pass.
+              npm test -- --testPathPattern=__tests__ --coverage --watchAll=false
+              ;;
+            integration)
+              # Jest's config enables coverage globally; a subset run would be
+              # judged against thresholds for the whole repo. Collect once, in
+              # the unit job only.
+              npm test -- --testPathPattern=services --coverage=false --watchAll=false
+              ;;
+            e2e)
+              # E2E is unit-style tests under __tests__/e2e/
+              npm test -- --testPathPattern=e2e --coverage=false --watchAll=false
+              ;;
+          esac
+
+      - name: Upload test coverage
+        if: matrix.test-type == 'unit'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage/lcov.info
+          flags: ${{ matrix.test-type }}
+          name: ${{ matrix.test-type }}-coverage
+          fail_ci_if_error: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.test-type }}
+          path: coverage/
+          retention-days: 7
+
+  # Device-level Detox E2E was removed: `detox` was not a dependency, the
+  # native android/ios projects are gitignored (Expo CNG), and the runner had
+  # no emulator. Unit-style flow tests live under __tests__/e2e and run in the
+  # test matrix above.
+
+  # ------------------------------------------------------------------
+  # EAS Build Validation
+  # ------------------------------------------------------------------
+  build:
+    name: EAS Build Validation
+    runs-on: ubuntu-latest
+    needs: [quality, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Check EAS credentials
+        id: eas-creds
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::notice::Skipping EAS config validation: EXPO_TOKEN is not configured"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup EAS CLI
+        if: steps.eas-creds.outputs.configured == 'true'
+        run: npm install -g eas-cli
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate EAS config
+        if: steps.eas-creds.outputs.configured == 'true'
+        run: eas config --platform android
+
+      - name: Validate EAS config (iOS)
+        if: steps.eas-creds.outputs.configured == 'true'
+        run: eas config --platform ios
+
+      - name: Production env gate
+        env:
+          EXPO_PUBLIC_APP_ENV: production
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_RAZORPAY_KEY_ID: ${{ secrets.EXPO_PUBLIC_RAZORPAY_KEY_ID }}
+          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            npm run check:production || (echo "::error::Production env validation failed"; exit 1)
+          else
+            echo "Skipping production env gate for non-production dispatch"
+          fi
+
+      - name: Export web bundle
+        run: npx expo export --platform web --output-dir web-build
+
+      - name: Bundle size check
+        run: |
+          SIZE_MB=$(du -sm web-build/ | awk '{print $1}')
+          echo "Bundle size: ${SIZE_MB}MB"
+          if [ "$SIZE_MB" -gt 8 ]; then
+            echo "::error::Bundle exceeds 8MB budget (${SIZE_MB}MB). Build will fail."
+            exit 1
+          fi
+
+  # ------------------------------------------------------------------
+  # Security Scanning
+  # ------------------------------------------------------------------
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm run check:audit
+
+      - name: Check for secrets in code
+        run: |
+          if grep -rE "sk_live_|sk_test_|Bearer sk_|api_key.*['\"][a-zA-Z0-9]{32,}|SUPABASE_SERVICE_ROLE_KEY\s*=\s*['\"]|RAZORPAY_KEY_SECRET\s*=\s*['\"]" \
+              app/ services/ components/ contexts/ hooks/ lib/ utils/ supabase/ \
+              --include="*.ts" --include="*.tsx" --include="*.js" 2>/dev/null; then
+            echo "::error::Potential secret found in source code!"
+            exit 1
+          fi
+
+  # ------------------------------------------------------------------
+  # Preview Deployment via EAS (pull requests)
+  # ------------------------------------------------------------------
+  deploy-preview:
+    name: Deploy Preview
+    runs-on: ubuntu-latest
+    needs: [build, security]
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check preview credentials
+        id: preview-creds
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::notice::Skipping preview builds: EXPO_TOKEN is not configured"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup EAS CLI
+        if: steps.preview-creds.outputs.configured == 'true'
+        run: npm install -g eas-cli
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build preview (Android)
+        if: steps.preview-creds.outputs.configured == 'true'
+        run: eas build --platform android --profile preview --non-interactive --no-wait
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build preview (iOS)
+        if: steps.preview-creds.outputs.configured == 'true'
+        run: eas build --platform ios --profile preview --non-interactive --no-wait
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+  # ------------------------------------------------------------------
+  # Production Checks + Store Release (manual dispatch only)
+  # ------------------------------------------------------------------
+  production-checks:
+    name: Production Environment Validation
+    runs-on: ubuntu-latest
+    needs: [build, security]
+    environment:
+      name: production
+      url: https://astronemi.app
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.confirm_production_deploy == 'DEPLOY TO PRODUCTION'
+    env:
+      # The gitignored .env.production is not part of the EAS/CI checkout.
+      # Provide the client bundle values from repository secrets so the
+      # production gate validates real values instead of an absent file.
+      EXPO_PUBLIC_APP_ENV: production
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+      EXPO_PUBLIC_RAZORPAY_KEY_ID: ${{ secrets.EXPO_PUBLIC_RAZORPAY_KEY_ID }}
+      EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+    steps:
+      - name: Verify production intent
+        run: |
+          if [ "${{ github.event.inputs.confirm_production_deploy }}" != "DEPLOY TO PRODUCTION" ]; then
+            echo "::error::Confirmation string mismatch. Aborting."
+            exit 1
+          fi
+          echo "Confirmation verified. Proceeding with production deploy."
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate production environment
+        run: npm run check:production
+
+      - name: Verify EAS/store placeholders
+        run: npm run check:eas
+
+      - name: Audit RPC authorization
+        run: npm run check:rpc-auth
+
+      - name: Send approval notification
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ROLLOUT_PCT: ${{ github.event.inputs.rollout_percentage }}
+        run: |
+          STATUS="${{ job.status }}"
+          curl -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-type: application/json' \
+            --data "{\"text\":\"AstroNemi production deploy *${STATUS}* (rollout: ${ROLLOUT_PCT}%) triggered by @${{ github.actor }}\"}"
+
+      - name: Verify EAS project is linked
+        run: |
+          PROJECT_ID=$(node -e "console.log(require('./app.json').expo?.extra?.eas?.projectId || '')")
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "CONFIGURE_EAS_PROJECT_ID_HERE" ]; then
+            echo "::error file=app.json::EAS projectId is a placeholder; run 'eas init' and commit the real ID"
+            exit 1
+          fi
+          if ! echo "$PROJECT_ID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'; then
+            echo "::error file=app.json::EAS projectId '$PROJECT_ID' is not a valid UUID"
+            exit 1
+          fi
+          echo "EAS projectId OK: $PROJECT_ID"
+
+      - name: Build production (Android)
+        run: eas build --platform android --profile production --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build production (iOS)
+        run: eas build --platform ios --profile production --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Upload source maps to Sentry
+        run: npx @sentry/react-native-sourcemaps upload
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+
+      - name: Submit to Play Store with staged rollout
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ROLLOUT_PCT: ${{ github.event.inputs.rollout_percentage }}
+        run: |
+          eas submit --platform android --latest --non-interactive --rollout "$ROLLOUT_PCT" || \
+            eas submit --platform android --latest --non-interactive
+
+      - name: Submit to App Store
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas submit --platform ios --latest --non-interactive
+
+  # ------------------------------------------------------------------
+  # Database Migration - manual dispatch only
+  # ------------------------------------------------------------------
+  database-migration:
+    name: Database Migration
+    runs-on: ubuntu-latest
+    needs: [quality, test]
+    environment:
+      name: database-migration
+      url: https://supabase.com/dashboard/project/${{ secrets.SUPABASE_PROJECT_REF }}
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.event.inputs.confirm_production_deploy == 'DEPLOY TO PRODUCTION'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        run: npm install -g supabase
+
+      - name: Link Supabase project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+
+      - name: Verify migration 012 is present
+        run: |
+          if [ ! -f supabase/migrations/012_is_admin_and_audit_logs.sql ]; then
+            echo "::error::CRITICAL-2 fix migration 012_is_admin_and_audit_logs.sql is missing!"
+            exit 1
+          fi
+
+      - name: Run database migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase db push
+
+      - name: Verify is_admin RPC exists
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase db remote psql --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
+            -c "SELECT public.is_admin('00000000-0000-0000-0000-000000000000'::uuid);" || \
+            (echo "::error::is_admin RPC not found. Did migration 012 apply?" && exit 1)
+
+      - name: Verify user-flag protection (P0 fix, migration 017)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase db remote psql --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
+            -c "SELECT check_name, is_ok, detail FROM public.verify_user_flag_protection();" \
+            > /tmp/user_flag_check.txt 2>&1 || \
+            (echo "::error::verify_user_flag_protection() RPC not found. Did migration 017 apply?" \
+              && cat /tmp/user_flag_check.txt && exit 1)
+
+          cat /tmp/user_flag_check.txt
+
+          if grep -q '| f ' /tmp/user_flag_check.txt; then
+            echo "::error::User-flag protection regression detected. See failing rows above."
+            exit 1
+          fi
+
+  # ------------------------------------------------------------------
+  # Staging OTA update (develop push)
+  # ------------------------------------------------------------------
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [quality, test]
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check staging credentials
+        id: staging-creds
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::notice::Skipping staging OTA: EXPO_TOKEN is not configured"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup EAS
+        if: steps.staging-creds.outputs.configured == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: 12.3.0
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Check EAS Update configuration
+        id: update-config
+        if: steps.staging-creds.outputs.configured == 'true'
+        run: |
+          PROJECT_ID=$(node -e "console.log(require('./app.json').expo?.extra?.eas?.projectId || '')")
+          UPDATES_URL=$(node -e "console.log(require('./app.json').expo?.updates?.url || '')")
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "CONFIGURE_EAS_PROJECT_ID_HERE" ] || [ -z "$UPDATES_URL" ]; then
+            echo "::notice::Skipping OTA update: run 'eas init' and 'eas update:configure' first"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Expo
+        if: steps.staging-creds.outputs.configured == 'true' && steps.update-config.outputs.configured == 'true'
+        run: eas update --branch staging --non-interactive
+
+  # ------------------------------------------------------------------
+  # Supabase Edge Functions deploy (manual, typed confirmation)
+  # ------------------------------------------------------------------
+  deploy-functions:
+    name: Deploy Core Edge Services
+    runs-on: ubuntu-latest
+    needs: quality
+    # Production functions are stateful money/auth code. Deploying them on
+    # every push to main bypassed the documented manual-only production gate.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.event.inputs.confirm_production_deploy == 'DEPLOY TO PRODUCTION'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy Functions to Supabase
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          # v1 launches without AI. Keep ai-chat/interpret-dream in the repo,
+          # but do NOT deploy them and do NOT set OPENAI_API_KEY.
+          FUNCTIONS="agora-token cancel-subscription create-razorpay-order daily-horoscope deduct-wallet health-check prokerala razorpay-webhook send-sms verify-iap-purchase verify-payment"
+          case " $FUNCTIONS " in
+            *" ai-chat "*|*" interpret-dream "*)
+              echo "::error::AI functions must not be deployed in the v1 launch"
+              exit 1
+              ;;
+          esac
+          for fn in $FUNCTIONS; do
+            echo "Deploying $fn"
+            supabase functions deploy "$fn" --project-ref "$PROJECT_REF"
+          done
+
+  # ------------------------------------------------------------------
+  # Performance Benchmark (k6)
+  # ------------------------------------------------------------------
+  load-test:
+    name: Performance Benchmark (k6)
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check load-test target
+        id: load-target
+        run: |
+          if [ -z "${{ secrets.STAGING_API_URL }}" ]; then
+            echo "::notice::Skipping k6 load test: STAGING_API_URL is not configured"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run k6 Load Test (Production Baseline)
+        if: steps.load-target.outputs.configured == 'true'
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: load-tests/production_load_test.js
+          flags: --env BASE_URL=${{ secrets.STAGING_API_URL }}

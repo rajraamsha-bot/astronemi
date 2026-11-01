@@ -1,0 +1,98 @@
+{
+  "expo": {
+    "name": "AstroNemi",
+    "slug": "astronemi",
+    "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "astronemi",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#6B46C1"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.astronemi.astronemi",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
+        "NSMicrophoneUsageDescription": "AstroNemi needs access to your microphone for voice calls with astrologers.",
+        "NSCameraUsageDescription": "AstroNemi needs access to your camera for video calls with astrologers.",
+        "NSLocationWhenInUseUsageDescription": "AstroNemi uses your location to provide accurate planetary positions for your current place.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#6B46C1"
+      },
+      "package": "com.astronemi.astronemi",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.INTERNET",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://astronemi.app"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      "expo-secure-store",
+      "expo-location",
+      [
+        "expo-notifications",
+        {
+          "color": "#6B46C1"
+        }
+      ],
+      "expo-video",
+      "expo-local-authentication",
+      "expo-iap"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCanary": false
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "CONFIGURE_EAS_PROJECT_ID_HERE"
+      }
+    }
+  }
+}

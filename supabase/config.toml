@@ -1,0 +1,9 @@
+# Supabase project configuration (CLI).
+# Minimal on purpose: the app was never linked to a CLI project config, which
+# is why the daily-horoscope Edge Function had NO schedule anywhere — the
+# "never-fired job" from the 2026-08 audit. The cron below runs at 18:30 UTC
+# = 00:00 IST, so each new Indian day's horoscopes exist before users wake.
+project_id = "astrofusion"
+
+[functions.daily-horoscope]
+schedule = "30 18 * * *"

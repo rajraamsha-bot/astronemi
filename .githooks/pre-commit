@@ -1,0 +1,23 @@
+#!/bin/sh
+#
+# Pre-commit hook: Run TypeScript typecheck before allowing a commit.
+#
+# Runs `npm run typecheck` (tsc --noEmit) on the full project.
+# If typecheck fails, the commit is aborted.
+# To skip: git commit --no-verify
+#
+
+echo "🔍 Running TypeScript typecheck..."
+
+# Run typecheck on the full project
+npm run typecheck --silent
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+  echo ""
+  echo "❌ TypeScript typecheck failed. Fix the errors above or skip with: git commit --no-verify"
+  exit 1
+fi
+
+echo "✅ TypeScript typecheck passed."
+exit 0

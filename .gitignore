@@ -1,0 +1,72 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+ios/
+android/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# Environment files (track only .env.example)
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+.env.test
+.env*.local
+
+# typescript
+*.tsbuildinfo
+.vercel
+
+.rork
+rork-eslint.config.js
+core
+
+# Log files
+*.log
+*.txt
+!README.md
+!QUICK_START.md
+
+# Service account keys (NEVER commit)
+google-service-account.json
+*.keystore
+
+# Test coverage
+coverage/
+
+# Dev artifacts (should not be in repo)
+fix_ts_errors.bat
+fix_all_remaining.bat
+
+# Kiro
+.kiro/
+
+# Supabase CLI local state
+supabase/.temp/

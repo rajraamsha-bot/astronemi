@@ -1,0 +1,93 @@
+{
+  "cli": {
+    "version": ">= 5.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "APP_ENV": "development",
+        "EXPO_PUBLIC_APP_ENV": "development",
+        "EXPO_PUBLIC_DEBUG_MODE": "false",
+        "EXPO_PUBLIC_USE_MOCK_API": "false",
+        "EXPO_PUBLIC_ENABLE_AI_FEATURES": "true",
+        "EXPO_PUBLIC_ENABLE_IAP": "false"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "APP_ENV": "staging",
+        "EXPO_PUBLIC_APP_ENV": "staging",
+        "EXPO_PUBLIC_DEBUG_MODE": "false",
+        "EXPO_PUBLIC_USE_MOCK_API": "false",
+        "EXPO_PUBLIC_ENABLE_AI_FEATURES": "true",
+        "EXPO_PUBLIC_ENABLE_IAP": "false"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle",
+        "autoIncrement": true
+      },
+      "ios": {
+        "autoIncrement": true
+      },
+      "env": {
+        "APP_ENV": "production",
+        "EXPO_PUBLIC_APP_ENV": "production",
+        "EXPO_PUBLIC_DEBUG_MODE": "false",
+        "EXPO_PUBLIC_USE_MOCK_API": "false",
+        "EXPO_PUBLIC_USE_MOCK_DATA": "false",
+        "EXPO_PUBLIC_ENABLE_AI_FEATURES": "false",
+        "EXPO_PUBLIC_ENABLE_IAP": "false",
+        "EXPO_PUBLIC_REVIEW_MODE": "false"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "production",
+        "rollout": 0.1
+      },
+      "ios": {
+        "_comment": "Replace REPLACE_WITH_* with real App Store Connect values before submitting to TestFlight/App Store. Get them at https://appstoreconnect.apple.com",
+        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "REPLACE_WITH_APPLE_TEAM_ID"
+      }
+    },
+    "staging": {
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "internal"
+      },
+      "ios": {
+        "_comment": "Replace REPLACE_WITH_* with real App Store Connect values for staging. Create a separate App Store Connect app for staging if you want a different bundle ID.",
+        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID_STAGING",
+        "appleTeamId": "REPLACE_WITH_APPLE_TEAM_ID"
+      }
+    }
+  },
+  "_deployment_docs": {
+    "_comment": "SETUP CHECKLIST: 1) Create EAS project: `npx eas-cli init`. 2) Update all REPLACE_WITH_* values above. 3) Drop google-service-account.json at project root (https://console.firebase.google.com -> Project Settings -> Service Accounts). 4) Run `eas build --profile production --platform android` and `--platform ios`. 5) Submit with `eas submit --platform ios --latest` and `eas submit --platform android --latest`.",
+    "eas_project_id_required": "Run `npx eas-cli init` to create a project, then paste the projectId at the top of this file (cli.projectId field)",
+    "google_service_account_required": "Create a service account at https://console.cloud.google.com/iam-admin/serviceaccounts, download the JSON key, save as ./google-service-account.json, and grant the Play Store Admin role",
+    "app_store_connect_required": "Create your app at https://appstoreconnect.apple.com, get the App ID (10-char), Apple Team ID, and ascAppId (numeric)"
+  }
+}

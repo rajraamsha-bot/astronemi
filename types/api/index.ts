@@ -1,0 +1,71 @@
+/**
+ * API Types Index
+ * 
+ * Centralized exports for all API-related type definitions
+ */
+
+// Request types
+export type {
+  PaginationParams,
+  SortingParams,
+  FilterParams,
+  QueryParams,
+  SearchParams,
+  DateRangeParams,
+  LocationParams,
+  UploadParams,
+  BulkParams,
+  LoginRequest,
+  VerifyOtpRequest,
+  RefreshTokenRequest,
+  CreateUserRequest,
+  UpdateUserRequest,
+  AstrologerSearchRequest,
+  CreateAstrologerRequest,
+  CreateConsultationRequest,
+  UpdateConsultationRequest,
+  SendMessageRequest,
+  CreatePaymentOrderRequest,
+  VerifyPaymentRequest,
+  RefundRequest,
+  TopUpWalletRequest,
+  TransferWalletRequest,
+  GenerateKundliRequest,
+  KundliMatchingRequest,
+  HoroscopeRequest,
+  PanchangRequest,
+  CreateSubscriptionRequest,
+  UpdateSubscriptionRequest,
+  CreateReviewRequest,
+  UpdateNotificationRequest,
+  NotificationPreferencesRequest,
+  AnalyticsRequest,
+  ExportRequest,
+  WebhookRequest,
+} from './requests';
+
+// Response types
+export type {
+  ApiResponse,
+  ApiError,
+  ResponseMeta,
+  PaginatedResponse,
+  PaginationMeta,
+  SuccessResponse,
+  UploadResponse,
+  BulkOperationResponse,
+  HealthCheckResponse,
+  ServiceHealth,
+  SearchResponse,
+  SearchFacet,
+  AnalyticsResponse,
+  ValidationErrorResponse,
+  ValidationError,
+  RateLimitResponse,
+  AuthResponse,
+  ConfigResponse,
+  NotificationResponse,
+  NotificationAction,
+  ExportResponse,
+  WebhookResponse,
+} from './responses';

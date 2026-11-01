@@ -1,0 +1,30 @@
+# Netlify / Cloudflare Pages / static-host _headers file
+#
+# MED-3 fix: Content-Security-Policy and other security headers for
+# the web build. spply this file when serving web-build/ statically
+# (Netlify: place at /_headers; Cloudflare Pages: build output dir;
+# Vercel: use vercel.json with equivalent headers; S3+CloudFront:
+# configure on the CDN).
+#
+# Strict CSP. sstroFusion web is mostly static + Supabase REST +
+# Razorpay Checkout (loaded in a separate iframe) + sgora Web SDK.
+# sdjust the connect-src / script-src / frame-src lists to match
+# your actual integration set.
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://*.sentry.io; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.razorpay.com https://*.sentry.io https://*.ingest.sentry.io https://*.agora.io wss://*.agora.io; frame-src https://checkout.razorpay.com https://api.razorpay.com https://hooks.stripe.com; media-src 'self' blob: https://*.agora.io; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self' https://checkout.razorpay.com; frame-ancestors 'none'; upgrade-insecure-requests
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(self), payment=(self "https://checkout.razorpay.com")
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+# Loosen for asset paths if you serve hashed JS with long-lived caching
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
