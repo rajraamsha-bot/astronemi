@@ -19,6 +19,29 @@
 --
 -- Run after 018_push_tokens_and_indexes.sql.
 
+-- 010/011 created these RPCs with different return types. PostgreSQL cannot
+-- change a return type through CREATE OR REPLACE, so drop the old signatures
+-- before defining the dashboard versions below.
+DROP FUNCTION IF EXISTS public.accept_consultation(UUID);
+DROP FUNCTION IF EXISTS public.decline_consultation(UUID, TEXT);
+DROP FUNCTION IF EXISTS public.complete_consultation(UUID, INTEGER);
+DROP FUNCTION IF EXISTS public.set_astrologer_availability(JSONB);
+DROP FUNCTION IF EXISTS public.request_astrologer_payout();
+DROP FUNCTION IF EXISTS public.refresh_astrologer_stats(UUID);
+
+-- Make the policy block re-runnable if an earlier failed push left objects
+-- behind.
+DROP POLICY IF EXISTS "Astrologers view own reviews" ON reviews;
+DROP POLICY IF EXISTS "Users view own reviews" ON reviews;
+DROP POLICY IF EXISTS "Users create own reviews" ON reviews;
+DROP POLICY IF EXISTS "Astrologers view own earnings" ON astrologer_earnings;
+DROP POLICY IF EXISTS "Astrologers manage own availability" ON availability_slots;
+DROP POLICY IF EXISTS "Anyone reads availability" ON availability_slots;
+DROP POLICY IF EXISTS "Astrologers manage own time off" ON astrologer_time_off;
+DROP POLICY IF EXISTS "Anyone reads time off" ON astrologer_time_off;
+DROP POLICY IF EXISTS "Astrologers view own stats" ON astrologer_stats;
+DROP POLICY IF EXISTS "Anyone views astrologer stats" ON astrologer_stats;
+
 -- ============================================================================
 -- 1) REVIEWS
 -- ============================================================================
@@ -78,6 +101,18 @@ CREATE TABLE IF NOT EXISTS astrologer_earnings (
   paid_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- 011 created astrologer_earnings without user_id/payout_id. Add them and
+-- backfill user_id from the linked consultation where possible.
+ALTER TABLE astrologer_earnings
+  ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS payout_id UUID;
+
+UPDATE astrologer_earnings e
+SET user_id = c.user_id
+FROM consultations c
+WHERE e.consultation_id = c.id
+  AND e.user_id IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_earnings_astrologer ON astrologer_earnings(astrologer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_earnings_status ON astrologer_earnings(status);
@@ -167,6 +202,17 @@ CREATE TABLE IF NOT EXISTS astrologer_stats (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 011 created astrologer_stats with a narrower shape. Add the dashboard
+-- columns before refresh_astrologer_stats() writes to them.
+ALTER TABLE astrologer_stats
+  ADD COLUMN IF NOT EXISTS pending_earnings DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS rating_5_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS rating_4_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS rating_3_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS rating_2_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS rating_1_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
 ALTER TABLE astrologer_stats ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Astrologers view own stats" ON astrologer_stats
@@ -197,6 +243,7 @@ CREATE INDEX IF NOT EXISTS idx_payouts_status ON payouts(status);
 
 ALTER TABLE payouts ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Astrologers view own payouts" ON payouts;
 CREATE POLICY "Astrologers view own payouts" ON payouts
   FOR SELECT USING (astrologer_id IN (SELECT id FROM public.astrologers WHERE user_id = auth.uid()));
 

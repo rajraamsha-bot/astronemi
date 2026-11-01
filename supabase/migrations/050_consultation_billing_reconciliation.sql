@@ -8,6 +8,7 @@ ALTER TABLE public.consultation_billing
   ADD COLUMN IF NOT EXISTS running_total NUMERIC(12,2) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS billed_minutes INT NOT NULL DEFAULT 0;
 
+DROP FUNCTION IF EXISTS public.debit_consultation_minute(UUID, INTEGER, TEXT);
 CREATE OR REPLACE FUNCTION public.debit_consultation_minute(
   p_consultation_id UUID,
   p_billing_minute  INT,

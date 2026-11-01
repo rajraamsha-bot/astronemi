@@ -23,11 +23,11 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     -- Subscription tier expiry: every 15 minutes.
     PERFORM cron.schedule('expire-subscriptions', '*/15 * * * *',
-      $$SELECT public.expire_subscriptions()$$);
+      'SELECT public.expire_subscriptions()');
 
     -- Hard-delete soft-deleted accounts after their grace period: hourly.
     PERFORM cron.schedule('sweep-deleted-accounts', '15 * * * *',
-      $$SELECT public.sweep_deleted_accounts()$$);
+      'SELECT public.sweep_deleted_accounts()');
 
     -- Astrologer AstroPro subscription expiry: hourly.
     IF EXISTS (
@@ -35,7 +35,7 @@ BEGIN
       WHERE routine_schema = 'public' AND routine_name = 'expire_astrologer_subscriptions'
     ) THEN
       PERFORM cron.schedule('expire-astrologer-subscriptions', '45 * * * *',
-        $$SELECT public.expire_astrologer_subscriptions()$$);
+        'SELECT public.expire_astrologer_subscriptions()');
     END IF;
   ELSE
     RAISE NOTICE 'pg_cron unavailable; call expire_subscriptions()/sweep_deleted_accounts()/expire_astrologer_subscriptions() from an external scheduler.';

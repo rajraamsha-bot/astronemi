@@ -3,6 +3,8 @@
 -- 2. Add server helper get_business_day_buckets for client RPCs
 
 -- Recast the admin revenue timeseries to bucket by Asia/Kolkata, not server TZ.
+-- 007 defined this with a different OUT row type, so drop it first.
+DROP FUNCTION IF EXISTS public.admin_revenue_timeseries(INTEGER);
 CREATE OR REPLACE FUNCTION public.admin_revenue_timeseries(p_days INT DEFAULT 7)
 RETURNS TABLE(day DATE, revenue_inr NUMERIC, consultation_count BIGINT)
 LANGUAGE sql

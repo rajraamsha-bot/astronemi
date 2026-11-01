@@ -127,7 +127,7 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     PERFORM cron.schedule('reset-today-earnings', '30 18 * * *',
-      $$SELECT public.reset_today_earnings()$$);
+      'SELECT public.reset_today_earnings()');
   ELSE
     RAISE NOTICE 'pg_cron unavailable; call reset_today_earnings() from an external scheduler at 18:30 UTC.';
   END IF;
